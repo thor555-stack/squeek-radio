@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Squeek Radio · music played by a hamster</title>
+<meta name="description" content="Squeek Radio turns Squeektoshi's live wheel on Squeekchain into generative music and a stream overlay.">
+<!-- SQUEEKCHAIN_VERIFY_TAG -->
+<style>
+:root{--bg:#0d0b14;--fg:#efe9ff;--dim:#8a80a8;--acc:#ffb347;--acc2:#9b7bff}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:ui-monospace,Menlo,Consolas,monospace}
+body.overlay{background:transparent}
+#wrap{max-width:760px;margin:0 auto;padding:20px}
+h1{font-size:22px;letter-spacing:.08em;margin:0 0 4px}
+.sub{color:var(--dim);font-size:13px;margin-bottom:16px}
+canvas{display:block;width:100%;height:auto;border-radius:12px;background:#140f22}
+body.overlay canvas{background:transparent}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}
+.chip{border:1px solid #2c2440;border-radius:999px;padding:6px 12px;font-size:12px}
+.chip b{color:var(--acc)}
+button,select{background:#1c1530;color:var(--fg);border:1px solid #3a2f58;border-radius:10px;padding:10px 14px;font:inherit;cursor:pointer}
+button.main{background:var(--acc);color:#1a1100;border:0;font-weight:700}
+.panel{border:1px solid #2c2440;border-radius:12px;padding:14px;margin-top:14px;font-size:13px;line-height:1.55;color:#cfc6ea}
+code{background:#1c1530;padding:2px 6px;border-radius:6px;word-break:break-all}
+#log{height:110px;overflow:auto;font-size:12px;color:var(--dim)}
+body.overlay #wrap>*:not(#stage){display:none}
+body.overlay #wrap{padding:0;max-width:none}
+#ovl{position:absolute;left:12px;bottom:12px;font-size:14px;text-shadow:0 1px 3px #000;display:none}
+body.overlay #ovl{display:block}
+#stage{position:relative}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>SQUEEK RADIO</h1>
+  <div class="sub">Live generative music, played by Squeektoshi's wheel on Squeekchain.</div>
+  <div id="stage">
+    <canvas id="cv" width="720" height="360"></canvas>
+    <div id="ovl"></div>
+  </div>
+  <div class="row">
+    <button class="main" id="play">▶ Tune in</button>
+    <select id="scale">
+      <option value="pent">Pentatonic</option>
+      <option value="dorian">Dorian</option>
+      <option value="lydian">Lydian dream</option>
+      <option value="minor">Night minor</option>
+    </select>
+    <button id="mute">Mute</button>
+  </div>
+  <div class="row" id="chips">
+    <span class="chip">wheel <b id="st">…</b></span>
+    <span class="chip">rpm <b id="rpm">…</b></span>
+    <span class="chip">block <b id="blk">…</b></span>
+    <span class="chip">round <b id="rnd">…</b></span>
+    <span class="chip">distance <b id="dist">…</b></span>
+  </div>
+  <div class="panel">
+    <b>How it plays</b><br>
+    • Wheel running: tempo follows the real RPM, faster run = faster arpeggio and brighter filter.<br>
+    • Wheel resting: a slow sleep drone with soft breathing pads, naps are music too.<br>
+    • New Squeek block: a bell chime. New settled round: a deep bass drop.<br>
+    • Every note is seeded from the live block and work counter, so each run is its own song.
+  </div>
+  <div class="panel">
+    <b>Stream overlay</b><br>
+    Add a Browser Source in OBS with this page plus <code>?overlay=1</code>. Transparent background, wheel and status only.
+    Add <code>&amp;autoplay=1</code> and tick "Control audio via OBS" to stream the music. Data refreshes every 5 seconds from the public Squeekchain API.
+  </div>
+  <div class="panel"><b>Live log</b><div id="log"></div></div>
+  <div class="sub" style="margin-top:14px">Data: api.squeekchain.com (read in your browser). No wallet, no signing. The real hamster is never pushed to run.</div>
+</div>
+<script>
+const API='https://api.squeekchain.com/v1/status';
+const qs=new URLSearchParams(location.search);
+if(qs.get('overlay')==='1')document.body.classList.add('overlay');
+const $=id=>document.getElementById(id);
+const S={status:'?',rpm:0,block:null,round:null,dist:0,work:0,angle:0,lastBlock:null,lastRound:null,ok:false};
+const log=t=>{const d=new Date().toLocaleTimeString();$('log').innerHTML=`<div>[${d}] ${t}</div>`+$('log').innerHTML};
+
+async function poll(){
+  try{
+    const r=await fetch(API,{cache:'no-store'});const j=await r.json();
+    const m=j.measurement||{},a=(j.builder&&j.builder.anchor)||{};
+    S.status=m.coreStatus||'?';S.rpm=(m.rpmMilli||0)/1000;S.dist=(m.distanceMm||0)/1000;
+    S.work=+(m.cumulativeWorkUnits||0);S.block=a.blockHeight;S.round=a.settledThroughRound;S.ok=true;
+    if(S.lastBlock!==null&&S.block!==S.lastBlock){log(`new Squeek block ${S.block}`);Audio.bell()}
+    if(S.lastRound!==null&&S.round!==S.lastRound){log(`round ${S.round} settled`);Audio.drop()}
+    if(S.lastBlock===null)log(`tuned in: wheel ${S.status}, block ${S.block}`);
+    S.lastBlock=S.block;S.lastRound=S.round;
+  }catch(e){S.ok=false;log('API unreachable, keeping last values')}
+  $('st').textContent=S.status;$('rpm').textContent=S.rpm.toFixed(1);
+  $('blk').textContent=S.block??'…';$('rnd').textContent=S.round??'…';
+  $('dist').textContent=(S.dist/1000).toFixed(2)+' km';
+  $('ovl').textContent=`🐹 ${S.status==='IDLE'?'napping 💤':'running 🔥 '+S.rpm.toFixed(0)+' rpm'} · block ${S.block??'…'}`;
+}
+
+const SCALES={pent:[0,2,4,7,9],dorian:[0,2,3,5,7,9,10],lydian:[0,2,4,6,7,9,11],minor:[0,2,3,5,7,8,10]};
+let seed=1;const rnd=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};
+const Audio={ctx:null,master:null,filt:null,drone:[],muted:false,next:0,
+  init(){
+    if(this.ctx)return;const c=this.ctx=new (window.AudioContext||window.webkitAudioContext)();
+    this.master=c.createGain();this.master.gain.value=.5;
+    const dl=c.createDelay(1);dl.delayTime.value=.33;const fb=c.createGain();fb.gain.value=.35;
+    this.filt=c.createBiquadFilter();this.filt.type='lowpass';this.filt.frequency.value=900;
+    this.filt.connect(this.master);this.filt.connect(dl);dl.connect(fb);fb.connect(dl);dl.connect(this.master);
+    this.master.connect(c.destination);
+    [55,82.4,110].forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain();o.type=i?'sine':'triangle';o.frequency.value=f;g.gain.value=0;o.connect(g);g.connect(this.filt);o.start();this.drone.push(g)});
+    this.next=c.currentTime;this.loop();
+  },
+  note(f,t,d,v,type){const c=this.ctx,o=c.createOscillator(),g=c.createGain();o.type=type||'square';o.frequency.value=f;
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.01);g.gain.exponentialRampToValueAtTime(.0001,t+d);
+    o.connect(g);g.connect(this.filt);o.start(t);o.stop(t+d+.05)},
+  bell(){if(!this.ctx)return;const t=this.ctx.currentTime;[1046.5,1568,2093].forEach((f,i)=>this.note(f,t+i*.08,1.6,.12,'sine'))},
+  drop(){if(!this.ctx)return;const c=this.ctx,t=c.currentTime,o=c.createOscillator(),g=c.createGain();o.type='sine';
+    o.frequency.setValueAtTime(110,t);o.frequency.exponentialRampToValueAtTime(36,t+1.2);g.gain.setValueAtTime(.5,t);g.gain.exponentialRampToValueAtTime(.001,t+1.4);
+    o.connect(g);g.connect(this.master);o.start(t);o.stop(t+1.5)},
+  loop(){
+    const c=this.ctx,running=S.status!=='IDLE'&&S.rpm>0;
+    const sc=SCALES[$('scale').value];
+    this.drone.forEach((g,i)=>g.gain.setTargetAtTime(running?.015:.05/(i+1),c.currentTime,1.5));
+    this.filt.frequency.setTargetAtTime(running?Math.min(600+S.rpm*40,5000):700,c.currentTime,.5);
+    while(this.next<c.currentTime+.3){
+      seed=(Number(S.block||0)*7919+S.work+Math.floor(this.next*4))>>>0||1;
+      if(running){
+        const step=Math.max(.07,.5-S.rpm/240);
+        const deg=sc[Math.floor(rnd()*sc.length)],oct=rnd()<.3?24:12;
+        this.note(220*Math.pow(2,(deg+oct)/12),this.next,step*1.8,.07,rnd()<.5?'square':'triangle');
+        if(rnd()<.25)this.note(110*Math.pow(2,sc[0]/12),this.next,step*3,.08,'sawtooth');
+        this.next+=step;
+      }else{
+        if(rnd()<.35){const deg=sc[Math.floor(rnd()*sc.length)];this.note(330*Math.pow(2,deg/12),this.next,3,.035,'sine')}
+        this.next+=1.6;
+      }
+    }
+    setTimeout(()=>this.loop(),100);
+  }
+};
+
+const cv=$('cv'),g=cv.getContext('2d');
+function draw(){
+  const W=cv.width,H=cv.height,cx=W/2,cy=H/2+10,R=H*.38;
+  g.clearRect(0,0,W,H);
+  S.angle+=(S.status!=='IDLE'?S.rpm:0)/60*2*Math.PI/60;
+  const px=6;
+  for(let i=0;i<48;i++){const a=S.angle+i/48*2*Math.PI;
+    g.fillStyle=i%6===0?'#ffb347':'#9b7bff';
+    for(let r=R-px*2;r<=R;r+=px)g.fillRect(Math.round((cx+Math.cos(a)*r)/px)*px,Math.round((cy+Math.sin(a)*r)/px)*px,px-1,px-1)}
+  for(let i=0;i<6;i++){const a=S.angle+i/6*Math.PI;g.strokeStyle='#3a2f58';g.lineWidth=3;g.beginPath();g.moveTo(cx-Math.cos(a)*R,cy-Math.sin(a)*R);g.lineTo(cx+Math.cos(a)*R,cy+Math.sin(a)*R);g.stroke()}
+  const run=S.status!=='IDLE'&&S.rpm>0,bob=run?Math.sin(Date.now()/60)*4:Math.sin(Date.now()/900)*2;
+  g.font='48px serif';g.textAlign='center';g.fillText(run?'🐹':'😴',cx,cy+R-18+bob);
+  g.fillStyle='#efe9ff';g.font='14px ui-monospace,monospace';
+  g.fillText(S.ok?(run?`RUNNING ${S.rpm.toFixed(1)} RPM`:'NAPPING · sleep drone'):'connecting…',cx,26);
+  requestAnimationFrame(draw);
+}
+draw();poll();setInterval(poll,5000);
+$('play').onclick=()=>{Audio.init();Audio.ctx.resume();$('play').textContent='♪ On air';log('audio on')};
+$('mute').onclick=()=>{if(!Audio.ctx)return;Audio.muted=!Audio.muted;Audio.master.gain.value=Audio.muted?0:.5;$('mute').textContent=Audio.muted?'Unmute':'Mute'};
+if(qs.get('autoplay')==='1'){try{Audio.init()}catch(e){}}
+</script>
+</body>
+</html>
