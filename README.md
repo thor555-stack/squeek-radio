@@ -14,3 +14,5 @@ Browser Source: `<site>/?overlay=1&autoplay=1`, tick "Control audio via OBS".
 Reads `https://api.squeekchain.com/v1/status` in the browser every 5 seconds. No wallet, no signing.
 
 <!-- SQUEEKCHAIN_REPO_LINE -->
+
+squeekchain-project: fe85e5b6-2683-4897-b3e6-7e2e1f6dce04
